@@ -50,14 +50,14 @@ class SpeechDataset(Dataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         IGNORE_TOKEN_ID = LabelSmoother.ignore_index
         msg = self.raw_data[i]
-        audio, sample_rate = torchaudio.load(msg['wav'])
+        audio, sample_rate = torchaudio.load(msg['audio_path'])
         if sample_rate != 16000:
             audio = torchaudio.transforms.Resample(sample_rate, 16000)(audio)
         if self.config.encoder_type == 'whisper':
             mel_len = math.ceil(
                 float(audio.size(1)) / 16000 * self.config.frames_per_second)
             audio = whisper.pad_or_trim(audio[0])
-            mel = whisper.log_mel_spectrogram(audio)
+            mel = whisper.log_mel_spectrogram(audio, n_mels=128)
         else:
             # Note: We use 16-bit quantization by default in WeNet.
             audio = audio * (1 << 15)
@@ -88,7 +88,7 @@ class SpeechDataset(Dataset):
         # `content`: the anwser acorrding to the audio and instruction
         # `txt`: the transcription of the audio
         # If there is no content, the default `content` is the same as `txt`.
-        content = msg['content'] if 'content' in msg else msg['txt']
+        content = msg['content'] if 'content' in msg else msg['text']
         if self.inference:
             kwargs = {'add_generation_prompt': True}
         else:
@@ -110,7 +110,7 @@ class SpeechDataset(Dataset):
         target_ids[target_ids == self.tokenizer.pad_token_id] = IGNORE_TOKEN_ID
         attention_mask = input_ids.ne(self.tokenizer.pad_token_id)
 
-        ctc_tokens = self.tokenizer(msg['txt'],
+        ctc_tokens = self.tokenizer(msg['text'],
                                     padding='max_length',
                                     max_length=100,
                                     truncation=True,
